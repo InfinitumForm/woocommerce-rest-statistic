@@ -92,6 +92,10 @@ if( ! class_exists('WC_REST_Payments') ) : class WC_REST_Payments {
 	protected function get_from_database($rest_data, $type = 'wc-completed') {
 		global $wpdb;
 		
+		$number_of_customers = absint($_GET['customers_per_page'] ?? 5);
+		
+		$currency = get_option('woocommerce_currency');
+		
 		// Get predefined data
 		$results = [
 			'today' => 0,
@@ -103,7 +107,9 @@ if( ! class_exists('WC_REST_Payments') ) : class WC_REST_Payments {
 			'last_3_months' => [],
 			'last_year' => [],
 			'all_time' => 0,
-			'range' => []
+			'range' => [],
+			'customers' => [],
+			'currency' => $currency
 		];
 		
 		// Set filter
@@ -123,6 +129,31 @@ if( ! class_exists('WC_REST_Payments') ) : class WC_REST_Payments {
 		
 		// Set return helper
 		$return = isset($results['today']) || isset($results['all_time']);
+		
+		// Get customer names
+		if($number_of_customers > 0 && isset($results['customers']) && ( $data = $wpdb->get_results( $wpdb->prepare( "
+			SELECT
+				CONCAT(`cl`.`first_name`, ' ', `cl`.`last_name`) AS `name`,
+				`os`.`net_total` AS `total`,
+				`os`.`date_created`
+			FROM
+				`{$wpdb->prefix}wc_order_stats` `os`
+				JOIN `{$wpdb->prefix}wc_customer_lookup` `cl` ON `cl`.`customer_id` = `os`.`customer_id`
+			WHERE
+				`os`.`status` = '{$type}'
+			ORDER BY `os`.`order_id` DESC
+			LIMIT %d
+		", $number_of_customers ) ) ) ) {
+			foreach( $data as $record ) {
+				$results['customers'][]=(object)[
+					'name' => $record->name,
+					'date' => $record->date_created,
+					'amount'=>(float)$record->total,
+					'currency' => $currency
+				];
+			}
+			$return = true;
+		}
 		
 		// Get today's order
 		if ( isset($results['today']) && $today = $wpdb->get_var( "
